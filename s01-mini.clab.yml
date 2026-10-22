@@ -1,0 +1,47 @@
+# Session 1 · mini MDH-Net. Free images only, runs in GitHub Codespaces.
+#
+#                        mgmt network 172.30.30.0/24 (eth0)
+#          ┌──────────────────────────┼──────────────────────────┐
+#          │ .4                       │ .2                       │ .3
+#     ┌────┴────┐                ┌────┴────┐                ┌────┴────┐
+#     │   pc1   │ eth1      eth1 │   r1    │ eth2      eth1 │   srv   │
+#     │ client  ├────────────────┤ router  ├────────────────┤  nginx  │
+#     └─────────┘                └─────────┘                └─────────┘
+#     10.1.0.10                10.1.0.1 │ 10.2.0.1           10.2.0.10
+#          └──── 10.1.0.0/24 ────┘           └──── 10.2.0.0/24 ────┘
+#
+#   Every node also has eth0 on 172.30.30.0/24: the management network.
+#   srv runs a web server: the 'portal'.
+#   The routes on pc1 and srv are left out on purpose: you add them in lab 2.
+#
+#   sudo containerlab deploy  -t s01-mini.clab.yml
+#   sudo containerlab inspect -t s01-mini.clab.yml
+#   sudo containerlab destroy -t s01-mini.clab.yml
+name: mini
+
+mgmt:
+  network: mini-mgmt
+  ipv4-subnet: 172.30.30.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    pc1:
+      exec:
+        - ip addr add 10.1.0.10/24 dev eth1
+    r1:
+      exec:
+        - ip addr add 10.1.0.1/24 dev eth1
+        - ip addr add 10.2.0.1/24 dev eth2
+        - sysctl -w net.ipv4.ip_forward=1
+    srv:
+      exec:
+        - ip addr add 10.2.0.10/24 dev eth1
+        - nginx
+
+  links:
+    - endpoints: ["pc1:eth1", "r1:eth1"]
+    - endpoints: ["r1:eth2", "srv:eth1"]

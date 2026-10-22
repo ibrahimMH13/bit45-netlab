@@ -1,0 +1,6 @@
+{
+  "name": "BIT 4.5 B Network Management lab",
+  "image": "ghcr.io/srl-labs/containerlab/devcontainer-dind-slim:0.81.1",
+  "runArgs": ["--privileged"],
+  "hostRequirements": { "cpus": 2 }
+}

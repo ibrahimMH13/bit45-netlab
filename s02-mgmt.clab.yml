@@ -1,0 +1,76 @@
+# Session 2 · mini MDH-Net + a management station. Free images only.
+#
+#     ┌─────────┐
+#     │   nms   │  network management station: snmpwalk, syslog collector,
+#     │  .10    │  NTP server. It sits ONLY on the management network.
+#     └────┬────┘
+#          │            mgmt network 172.30.30.0/24 (eth0)
+#          ├──────────────────────────┼──────────────────────────┐
+#          │ .4                       │ .2                       │ .3
+#     ┌────┴────┐                ┌────┴────┐                ┌────┴────┐
+#     │   pc1   │ eth1      eth1 │   r1    │ eth2      eth1 │   srv   │
+#     │ client  ├────────────────┤ router  ├────────────────┤  nginx  │
+#     └─────────┘                └─────────┘                └─────────┘
+#     10.1.0.10                10.1.0.1 │ 10.2.0.1           10.2.0.10
+#
+#   Same network as session 1, with the lab-2 routes already in place.
+#   r1 and srv run an SNMP agent (community 'public', v2c) and send their
+#   syslog to nms. nms serves NTP.
+#
+#   The first deploy downloads the SNMP packages: about one minute.
+#
+#   sudo containerlab destroy -a                 # stop the session 1 lab first
+#   sudo containerlab deploy  -t s02-mgmt.clab.yml
+#   docker exec -it clab-mdh-nms sh              # a shell on the station
+name: mdh
+
+mgmt:
+  network: mdh-mgmt
+  ipv4-subnet: 172.30.30.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    nms:
+      mgmt-ipv4: 172.30.30.10
+      exec:
+        - apk add -q --no-cache net-snmp-tools
+        # syslog collector: each UDP datagram on port 514 becomes one line,
+        # prefixed with the sender's address
+        - sh -c 'nohup socat -u UDP-RECVFROM:514,fork SYSTEM:"echo \$SOCAT_PEERADDR \$(cat) >> /var/log/network.log" >/dev/null 2>&1 &'
+        # NTP server for the lab
+        - ntpd -l
+    pc1:
+      mgmt-ipv4: 172.30.30.4
+      exec:
+        - ip addr add 10.1.0.10/24 dev eth1
+        - ip route add 10.2.0.0/24 via 10.1.0.1
+    r1:
+      mgmt-ipv4: 172.30.30.2
+      binds:
+        - snmpd.conf:/etc/snmp/snmpd.conf
+      exec:
+        - ip addr add 10.1.0.1/24 dev eth1
+        - ip addr add 10.2.0.1/24 dev eth2
+        - sysctl -w net.ipv4.ip_forward=1
+        - apk add -q --no-cache net-snmp
+        - snmpd -C -c /etc/snmp/snmpd.conf
+        - syslogd -L -R 172.30.30.10:514
+    srv:
+      mgmt-ipv4: 172.30.30.3
+      binds:
+        - snmpd.conf:/etc/snmp/snmpd.conf
+      exec:
+        - ip addr add 10.2.0.10/24 dev eth1
+        - ip route add 10.1.0.0/24 via 10.2.0.1
+        - nginx
+        - apk add -q --no-cache net-snmp
+        - snmpd -C -c /etc/snmp/snmpd.conf
+        - syslogd -L -R 172.30.30.10:514
+
+  links:
+    - endpoints: ["pc1:eth1", "r1:eth1"]
+    - endpoints: ["r1:eth2", "srv:eth1"]

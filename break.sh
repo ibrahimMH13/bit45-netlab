@@ -9,8 +9,10 @@
 #   ./break.sh --selfcheck  teacher: prove every fault breaks and every fix heals
 #
 # Needs the lab deployed and lab 2 done (routes added on pc1 and srv).
+# Works on the session 1 lab (mini) and the session 2 lab (mdh).
 set -u
-x() { docker exec "clab-mini-$1" sh -c "$2" >/dev/null 2>&1; }
+L=$(docker ps --format '{{.Names}}' | grep -q '^clab-mdh-' && echo mdh || echo mini)
+x() { docker exec "clab-$L-$1" sh -c "$2" >/dev/null 2>&1; }
 
 FAULTS=(
   "r1: interface eth2 (towards srv) is shut down"
@@ -45,7 +47,7 @@ fix() {
 }
 
 check() {
-  if docker exec clab-mini-pc1 sh -c "ping -q -c 10 -i 0.2 -W 1 10.2.0.10 | grep -q ' 0% packet loss' && curl -s -m 2 -o /dev/null http://10.2.0.10"; then
+  if docker exec "clab-$L-pc1" sh -c "ping -q -c 10 -i 0.2 -W 1 10.2.0.10 | grep -q ' 0% packet loss' && curl -s -m 2 -o /dev/null http://10.2.0.10"; then
     echo "portal OK from pc1"
   else
     echo "portal NOT reachable from pc1"; return 1

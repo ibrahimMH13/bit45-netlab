@@ -1,29 +1,29 @@
-# Session 2 · Lab 3: Last week's faults, seen only from nms
+# Session 2 · Lab 3: How busy is r1's link to pc1?
 
-**Pairs, swap roles** · 30 minutes · outcome: Device, cause and the OID that showed it
+**Pairs** · 15 minutes · outcome: A rate in kbit/s, with the calculation
 
 Run everything from this session's folder: `cd s02`
 
-## A breaks, B looks only from nms
+## Terminal 1: nms · terminal 2: traffic
 
 ```sh
-cd s02 && ./break.sh   # A, in a second terminal
-# B, inside nms. Wait 30 s: the agent caches.
-S='snmpwalk -v2c -c public'
-$S 172.30.30.2 IF-MIB::ifOperStatus      # links up?
-$S 172.30.30.2 IP-MIB::ipForwarding      # routing on?
-$S 172.30.30.3 IP-MIB::ipAdEntAddr       # addresses
-$S 172.30.30.3 IP-FORWARD-MIB::ipCidrRouteNextHop
-$S 172.30.30.3 HOST-RESOURCES-MIB::hrSWRunName
-./break.sh --check  # A's terminal: after B names + fixes it
+docker exec -it clab-mdh-nms sh         # terminal 1: a shell on nms
+snmpwalk -v2c -c public 172.30.30.2 IF-MIB::ifDescr | grep eth
+# terminal 2: 10 pings per second, 1200 bytes each, for 30 s
+docker exec clab-mdh-pc1 ping -q -c 300 -i 0.1 -s 1200 10.2.0.10
+# terminal 1: two readings, 10 s apart (use your index)
+snmpget -v2c -c public -Oqv 172.30.30.2 IF-MIB::ifHCInOctets.59
+sleep 10
+snmpget -v2c -c public -Oqv 172.30.30.2 IF-MIB::ifHCInOctets.59
 ```
 
 Prints something like:
 
 ```sh
-IP-MIB::ipForwarding.0 = INTEGER: notForwarding(2)
+13890
+153148     # (153148 - 13890) × 8 / 10 s ≈ 111 kbit/s
 ```
 
 ## Then verify
 
-One fault of the six cannot be seen with SNMP at all. Which one, and what would you need to see it?
+Work out what the rate should be: 10 packets/s × about 1240 bytes × 8. Is your SNMP number close? Why not exact?

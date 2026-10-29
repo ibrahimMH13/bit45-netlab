@@ -1,31 +1,28 @@
-# Session 2 · Lab 2: How busy is r1's link to pc1?
+# Session 2 · Lab 2: Configure SNMP on r1 and srv
 
-**Pairs** · 20 minutes · outcome: A rate in kbit/s, with the calculation
+**Individual** · 20 minutes · outcome: Both agents answer nms; r1 refuses pc1
 
 Run everything from this session's folder: `cd s02`
 
-## Terminal 1: nms · terminal 2: traffic
+## Write the file, start the agent, test
 
 ```sh
-# nms: find the index of eth1 on r1
-snmpwalk -v2c -c public 172.30.30.2 IF-MIB::ifDescr | grep eth
-
-# terminal 2: 10 pings per second, 1200 bytes each
-docker exec clab-mdh-pc1 ping -q -c 300 -i 0.1 -s 1200 10.2.0.10
-
-# nms: two readings, 10 seconds apart (use your index)
-snmpget -v2c -c public -Oqv 172.30.30.2 IF-MIB::ifHCInOctets.59
-sleep 10
-snmpget -v2c -c public -Oqv 172.30.30.2 IF-MIB::ifHCInOctets.59
+# 1. write config/r1/snmpd.conf (previous slide)
+# 2. write config/srv/snmpd.conf: location 'MDH-Net server room, rack 1'
+docker exec clab-mdh-r1  sh -c 'pkill snmpd; snmpd -C -c /etc/lab/snmpd.conf'
+docker exec clab-mdh-srv sh -c 'pkill snmpd; snmpd -C -c /etc/lab/snmpd.conf'
+docker exec clab-mdh-nms snmpwalk -v2c -c public 172.30.30.3 system
+# no answer? run it in the foreground to see the error (Ctrl+C):
+docker exec clab-mdh-r1  sh -c 'pkill snmpd; snmpd -f -Le -C -c /etc/lab/snmpd.conf'
 ```
 
 Prints something like:
 
 ```sh
-13890
-153148     # (153148 - 13890) × 8 / 10 s ≈ 111 kbit/s
+SNMPv2-MIB::sysName.0 = STRING: srv
+SNMPv2-MIB::sysLocation.0 = STRING: MDH-Net server room, rack 1
 ```
 
 ## Then verify
 
-Work out what the rate should be: 10 packets/s × about 1240 bytes. Is your SNMP number close? Why not exact?
+Prove the access control: from pc1, `snmpget -v2c -c public 10.1.0.1 sysName.0` must time out (install the tools there first: `apk add net-snmp-tools`).

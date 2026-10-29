@@ -1,18 +1,29 @@
-# Session 2 · Lab 4: SNMP versions: v1 and v2c send the password in the open
+# Session 2 · Lab 4: Last week's faults, seen only from nms
 
-**Individual** · 8 min · outcome: see it yourself
+**Pairs, swap roles** · 25 minutes · outcome: Device, cause and the OID that showed it
 
 Run everything from this session's folder: `cd s02`
 
+## A breaks, B looks only from nms
+
 ```sh
-# nms, terminal 1
-tcpdump -i eth0 -n -A udp port 161
-# nms, terminal 2
-snmpget -v2c -c public 172.30.30.2 sysName.0
+cd s02 && ./break.sh   # A, in a second terminal
+# B, inside nms. Wait 30 s: the agent caches.
+S='snmpwalk -v2c -c public'
+$S 172.30.30.2 IF-MIB::ifOperStatus      # links up?
+$S 172.30.30.2 IP-MIB::ipForwarding      # routing on?
+$S 172.30.30.3 IP-MIB::ipAdEntAddr       # addresses
+$S 172.30.30.3 IP-FORWARD-MIB::ipCidrRouteNextHop  # routes
+$S 172.30.30.3 HOST-RESOURCES-MIB::hrSWRunName     # processes
+./break.sh --check  # A's terminal: after B names + fixes it
 ```
 
 Prints something like:
 
 ```sh
-....public......  <- the password
+IP-MIB::ipForwarding.0 = INTEGER: notForwarding(2)
 ```
+
+## Then verify
+
+One fault of the six cannot be seen with SNMP at all. Which one, and what would you need to see it?

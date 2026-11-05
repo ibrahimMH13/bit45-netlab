@@ -1,0 +1,92 @@
+# Session 3 · mini MDH-Net + a monitoring stack. Free images only.
+#
+#   probe ── shares pc1's network: measures the portal as a user sees it
+#     │
+#   ┌─┴───┐ eth1   eth1 ┌─────┐ eth2   eth1 ┌─────┐
+#   │ pc1 ├─────────────┤ r1  ├─────────────┤ srv │  nginx portal 10.2.0.10
+#   └─┬───┘             └──┬──┘             └──┬──┘
+#     │ .4                 │ .2  snmpd         │ .3  snmpd
+#   ──┴────────────────────┴──────┬────────────┴──── mgmt 172.30.30.0/24
+#            ┌────────────────────┼────────────────────┐
+#        ┌───┴────┐           ┌───┴────┐           ┌───┴─────┐
+#        │  snmp  │ .20       │  prom  │ .30       │ grafana │ .40
+#        │exporter│ :9116     │ :9090  │           │  :3000  │
+#        └────────┘           └────────┘           └─────────┘
+#
+#   SNMP agents on r1 and srv are configured for you (session 2 solution).
+#   You write config/prom/prometheus.yml and config/prom/rules.yml.
+#   Prometheus sees that folder as /etc/prometheus.
+#
+#   sudo containerlab destroy -a                 # stop the session 2 lab first
+#   sudo containerlab deploy  -t s03-mon.clab.yml
+#   Then open the PORTS tab: 9090 = Prometheus, 3000 = Grafana.
+name: mdh
+
+mgmt:
+  network: mdh-mgmt
+  ipv4-subnet: 172.30.30.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    pc1:
+      mgmt-ipv4: 172.30.30.4
+      exec:
+        - ip addr add 10.1.0.10/24 dev eth1
+        - ip route add 10.2.0.0/24 via 10.1.0.1
+    r1:
+      mgmt-ipv4: 172.30.30.2
+      binds:
+        - config/r1:/etc/lab
+      exec:
+        - ip addr add 10.1.0.1/24 dev eth1
+        - ip addr add 10.2.0.1/24 dev eth2
+        - sysctl -w net.ipv4.ip_forward=1
+        - apk add -q --no-cache net-snmp
+        - snmpd -C -c /etc/lab/snmpd.conf
+    srv:
+      mgmt-ipv4: 172.30.30.3
+      binds:
+        - config/srv:/etc/lab
+      exec:
+        - ip addr add 10.2.0.10/24 dev eth1
+        - ip route add 10.1.0.0/24 via 10.2.0.1
+        - nginx
+        - apk add -q --no-cache net-snmp
+        - snmpd -C -c /etc/lab/snmpd.conf
+
+    # blackbox exporter inside pc1's network namespace: it pings and fetches
+    # the portal over the data network, exactly like a user. Port 9115.
+    probe:
+      image: prom/blackbox-exporter:v0.27.0
+      network-mode: container:pc1
+      user: root
+    snmp:
+      image: prom/snmp-exporter:v0.29.0
+      mgmt-ipv4: 172.30.30.20
+    prom:
+      image: prom/prometheus:v3.5.0
+      mgmt-ipv4: 172.30.30.30
+      user: root
+      binds:
+        - config/prom:/etc/prometheus
+      cmd: --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
+      ports:
+        - 9090:9090
+    grafana:
+      image: grafana/grafana-oss:12.1.1
+      mgmt-ipv4: 172.30.30.40
+      env:
+        # no login: Codespaces' proxy breaks Grafana's login form
+        GF_AUTH_ANONYMOUS_ENABLED: "true"
+        GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+        GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      ports:
+        - 3000:3000
+
+  links:
+    - endpoints: ["pc1:eth1", "r1:eth1"]
+    - endpoints: ["r1:eth2", "srv:eth1"]

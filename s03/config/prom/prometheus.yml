@@ -1,0 +1,36 @@
+# Session 3 · your Prometheus configuration. Prometheus reads this file
+# as /etc/prometheus/prometheus.yml. After every change:
+#   ./reload.sh          (checks the file, then reloads Prometheus)
+
+global:
+  scrape_interval: 5s        # collect every 5 s (real networks: 15-60 s)
+  evaluation_interval: 5s    # check alert rules every 5 s
+
+# Task 5: uncomment once rules.yml has your rules.
+# rule_files:
+#   - rules.yml
+
+scrape_configs:
+
+  # Given: is the portal answering HTTP, seen from pc1?
+  # Prometheus asks the probe (pc1, 172.30.30.4:9115) to fetch the target.
+  - job_name: portal-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["http://10.2.0.10"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target     # the URL the probe must fetch
+      - source_labels: [__param_target]
+        target_label: instance           # label the result with that URL
+      - target_label: __address__
+        replacement: 172.30.30.4:9115    # but scrape the probe itself
+
+  # Task 2a: a job 'portal-icmp': the same probe, module icmp,
+  #          target 10.2.0.10 (no http://).
+
+  # Task 2b: a job 'snmp': scrape the snmp exporter (172.30.30.20:9116),
+  #          metrics_path /snmp, params module [if_mib] and auth [public_v2],
+  #          targets 172.30.30.2 and 172.30.30.3.

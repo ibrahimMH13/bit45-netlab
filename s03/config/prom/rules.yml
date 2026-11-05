@@ -1,0 +1,7 @@
+# Session 3 · task 5: your alert rules. Loaded by 'rule_files' in
+# prometheus.yml. Write two rules:
+#   PortalDown   the HTTP probe fails for 20 s                  severity page
+#   PortalLossy  more than 10% of pings lost over the last 1 m  severity ticket
+groups:
+  - name: portal
+    rules: []

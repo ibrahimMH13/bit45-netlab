@@ -1,0 +1,90 @@
+# Session 4 · MDH-Net's 50 Mbit/s uplink, and what happens to it at 18:00.
+#
+#   pc1 = the campus      r1 = edge router      srv = "the internet"
+#
+#   ┌─────┐ eth1   eth1 ┌─────┐ eth2 ══════ eth1 ┌─────┐
+#   │ pc1 ├─────────────┤ r1  ├══ 50 Mbit/s ═════┤ srv │  nginx 10.2.0.10
+#   └─┬───┘             └──┬──┘    UPLINK        └──┬──┘  iperf3 :5201 :5202
+#     │ .4  + probe        │ .2  snmpd               │ .3  snmpd
+#   ──┴────────────────────┴──────┬──────────────────┴──── mgmt 172.30.30.0/24
+#        snmp exporter .20 · prom .30 :9090 · grafana .40 :3000
+#
+#   The uplink is r1 eth2, shaped by config/r1/qos.sh: that is the file you
+#   edit today. ./apply.sh runs it on r1. ./measure.sh is the 18:00 test.
+#   Prometheus and Grafana come configured; Grafana opens on "MDH uplink".
+#
+#   sudo containerlab destroy -a                  # stop last week's lab first
+#   sudo containerlab deploy  -t s04-perf.clab.yml
+name: mdh
+
+mgmt:
+  network: mdh-mgmt
+  ipv4-subnet: 172.30.30.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    pc1:
+      mgmt-ipv4: 172.30.30.4
+      exec:
+        - ip addr add 10.1.0.10/24 dev eth1
+        - ip route add 10.2.0.0/24 via 10.1.0.1
+    r1:
+      mgmt-ipv4: 172.30.30.2
+      binds:
+        - config/r1:/etc/lab
+      exec:
+        - ip addr add 10.1.0.1/24 dev eth1
+        - ip addr add 10.2.0.1/24 dev eth2
+        - sysctl -w net.ipv4.ip_forward=1
+        - sh /etc/lab/qos.sh
+        - apk add -q --no-cache net-snmp
+        - snmpd -C -c /etc/lab/snmpd.conf
+    srv:
+      mgmt-ipv4: 172.30.30.3
+      binds:
+        - config/srv:/etc/lab
+      exec:
+        - ip addr add 10.2.0.10/24 dev eth1
+        - ip route add 10.1.0.0/24 via 10.2.0.1
+        - nginx
+        - iperf3 -s -D -p 5201
+        - iperf3 -s -D -p 5202
+        - apk add -q --no-cache net-snmp
+        - snmpd -C -c /etc/lab/snmpd.conf
+
+    probe:
+      image: prom/blackbox-exporter:v0.27.0
+      network-mode: container:pc1
+      user: root
+    snmp:
+      image: prom/snmp-exporter:v0.29.0
+      mgmt-ipv4: 172.30.30.20
+    prom:
+      image: prom/prometheus:v3.5.0
+      mgmt-ipv4: 172.30.30.30
+      user: root
+      binds:
+        - config/prom:/etc/prometheus
+      cmd: --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
+      ports:
+        - 9090:9090
+    grafana:
+      image: grafana/grafana-oss:12.1.1
+      mgmt-ipv4: 172.30.30.40
+      binds:
+        - config/grafana:/etc/grafana/provisioning
+      env:
+        GF_AUTH_ANONYMOUS_ENABLED: "true"
+        GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+        GF_AUTH_DISABLE_LOGIN_FORM: "true"
+        GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/uplink.json
+      ports:
+        - 3000:3000
+
+  links:
+    - endpoints: ["pc1:eth1", "r1:eth1"]
+    - endpoints: ["r1:eth2", "srv:eth1"]
